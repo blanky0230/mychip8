@@ -1,10 +1,8 @@
-const FPS = 15;
-const INSTRUCTIONS_FRAME = 5;
+import * as fs from 'fs';
+import * as process from 'process';
 
-const demoRom64 = 'YABhAKIiwgEyAaIe0BRwBDBAEgRgAHEEMSASBBIcgEAgECBAgBA=';
-// const demoRom64 = 'YABhAKIiwgEyAaIe0BRwBDBAEgRgAHEEMSASBBIcgEAgECBAgBA=';
-// const demoRom64 =
-//     'MHg2MCAweDAwIDB4NjEgMHgwMCAweEEyIDB4MjIgMHhDMiAweDAxIDB4MzIgMHgwMSAweEEyIDB4MUUgMHhEMCAweDE0IDB4NzAgMHgwNCAweDMwIDB4NDAgMHgxMiAweDA0IDB4NjAgMHgwMCAweDcxIDB4MDQgMHgzMSAweDIwIDB4MTIgMHgwNCAweDEyIDB4MUMgMHg4MCAweDQwIDB4MjAgMHgxMCAweDIwIDB4NDAgMHg4MCAweDEwCg==';
+const FPS = 15;
+const INSTRUCTIONS_FRAME = 20;
 
 enum Opcode {
     scdown,
@@ -272,8 +270,6 @@ const execute = (instruction: Instruction, state: State): void => {
     }
 };
 
-const rom = new Uint8Array(Buffer.from(demoRom64, 'base64'));
-
 const render = (state: State) => {
     console.clear();
     for (let row = 0; row < 32; row++) {
@@ -289,7 +285,15 @@ const render = (state: State) => {
     }
 };
 
-const advanceFrame = (state: State, currentInstruction: Instruction) => {
+const advanceFrame = (state: State) => {
+    const currentInstruction: Instruction = {
+        opcode: Opcode.invalid,
+        operand: -1,
+        reg1: -1,
+        reg2: -1,
+        word: -1,
+    };
+
     for (let i = 0; i < INSTRUCTIONS_FRAME; i++) {
         const instructionWord =
             (state.mem[state.p] << 8) | state.mem[(state.p + 1) & 0xffff];
@@ -297,6 +301,11 @@ const advanceFrame = (state: State, currentInstruction: Instruction) => {
         decodeInto(instructionWord, currentInstruction);
         execute(currentInstruction, state);
     }
+};
+
+const readRom = (path: string) => {
+    const file = fs.readFileSync(path);
+    return new Uint8Array(file);
 };
 
 const main = async () => {
@@ -312,21 +321,19 @@ const main = async () => {
         stack: new Uint8Array(64),
     };
 
-    state.mem.subarray(0x0200).set(rom);
-
-    const currentInstruction: Instruction = {
-        opcode: Opcode.invalid,
-        operand: -1,
-        reg1: -1,
-        reg2: -1,
-        word: -1,
-    };
+    try {
+        const newRom = readRom(process.argv[2]);
+        state.mem.subarray(0x0200).set(newRom);
+    } catch (e) {
+        console.error('Error reading file', e);
+        process.exit(1);
+    }
 
     let timeEmulated = 0;
     const timebase = Date.now();
 
     while (true) {
-        advanceFrame(state, currentInstruction);
+        advanceFrame(state);
         render(state);
 
         timeEmulated += 1000 / FPS;
