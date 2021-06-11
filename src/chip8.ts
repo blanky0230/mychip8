@@ -261,6 +261,7 @@ const execute = (instruction: Instruction, state: State): void => {
             }
             break;
         }
+
         case Opcode.jmp:
             state.p = instruction.operand;
             break;
