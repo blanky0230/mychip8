@@ -112,6 +112,12 @@ const decodeInto = (
             instruction.operand = instructionWord & 0x00ff;
             break;
 
+        case 0x4000:
+            instruction.opcode = Opcode.skne;
+            extractReg1();
+            instruction.operand = instructionWord & 0x0ff;
+            break;
+
         case 0x7000:
             instruction.opcode = Opcode.add;
             extractReg1();
@@ -161,6 +167,10 @@ const decodeInto = (
                 case 0x0002:
                     instruction.opcode = Opcode.and;
                     break;
+
+                case 0x0004:
+                    instruction.opcode = Opcode.add;
+                    break;
             }
             break;
         }
@@ -209,6 +219,11 @@ const disassemble = (instruction: Instruction): string => {
 
         case Opcode.skeq:
             return `0x3 skeq v${instruction.reg1.toString(
+                16,
+            )} 0x${instruction.operand.toString(16).padStart(2, '0')}`;
+
+        case Opcode.skne:
+            return `0x4 sneq v${instruction.reg1.toString(
                 16,
             )} 0x${instruction.operand.toString(16).padStart(2, '0')}`;
 
@@ -340,6 +355,12 @@ const execute = (instruction: Instruction, state: State): void => {
             }
             break;
 
+        case Opcode.skne:
+            if (state.register[instruction.reg1] !== op2()) {
+                state.p = (state.p + 2) & 0xffff;
+            }
+            break;
+
         case Opcode.sprite:
             drawSprite(instruction, state);
             break;
@@ -407,6 +428,7 @@ const execute = (instruction: Instruction, state: State): void => {
 };
 
 const render = (state: State) => {
+    process.stdout.write('\x1b[2J');
     console.clear();
     for (let row = 0; row < 32; row++) {
         for (let col = 0; col < 64; col++) {
@@ -414,7 +436,7 @@ const render = (state: State) => {
                 state.buffer[8 * row + (col >>> 3)] &
                     (0x01 << (7 - (col & 0x07)))
                     ? '██'
-                    : 'XX',
+                    : '  ',
             );
         }
         process.stdout.write('\n');
