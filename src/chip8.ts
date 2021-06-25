@@ -1,6 +1,3 @@
-import * as fs from 'fs';
-import * as process from 'process';
-
 const FPS = 30;
 const INSTRUCTIONS_FRAME = 20;
 
@@ -457,6 +454,7 @@ const advanceFrame = (state: State) => {
             (state.mem[state.p] << 8) | state.mem[(state.p + 1) & 0xffff];
         state.p = (state.p + 2) & 0xffff;
         decodeInto(instructionWord, currentInstruction);
+        console.log(disassemble(currentInstruction));
         execute(currentInstruction, state);
 
         state.time += 1000 / FPS / INSTRUCTIONS_FRAME;
@@ -478,12 +476,12 @@ const advanceFrame = (state: State) => {
     }
 };
 
-const readRom = (path: string) => {
-    const file = fs.readFileSync(path);
-    return new Uint8Array(file);
-};
+// const readRom = (path: string) => {
+//     const file = fs.readFileSync(path);
+//     return new Uint8Array(file);
+// };
 
-const main = async () => {
+const runEmulator = async (rom: Uint8Array) => {
     const state: State = {
         buffer: new Uint8Array(256),
         delayTimer: 0,
@@ -498,20 +496,12 @@ const main = async () => {
         stack: new Uint16Array(16),
     };
 
-    try {
-        const newRom = readRom(process.argv[2]);
-        state.mem.subarray(0x0200).set(newRom);
-    } catch (e) {
-        console.error('Error reading file', e);
-        process.exit(1);
-    }
+    state.mem.subarray(0x0200).set(rom);
 
-    let ticks = 0;
     const timebase = Date.now();
 
     while (true) {
         advanceFrame(state);
-        render(state);
 
         const delta = state.time - (Date.now() - timebase);
 
@@ -521,4 +511,4 @@ const main = async () => {
     }
 };
 
-main();
+export default runEmulator;

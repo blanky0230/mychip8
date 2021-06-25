@@ -1,0 +1,2 @@
+yarn run v1.22.10
+$ /home/tblank/Coding/chip-8/node_modules/.bin/ts-node src/chip8.ts 'Trip8 Demo (2008) [Revival Studios].ch8'
