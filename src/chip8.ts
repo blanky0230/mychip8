@@ -388,12 +388,12 @@ const execute = (instruction: Instruction, state: State): void => {
             break;
 
         case Opcode.adi:
-            state.i = (state.i + state.register[instruction.reg1]) & 0x0fff;
+            state.i = state.i + state.register[instruction.reg1];
             break;
 
         case Opcode.ldr:
             for (let i = 0; i <= instruction.reg1; i++) {
-                state.register[i] = state.mem[state.i + i];
+                state.register[i] = state.mem[(state.i + i) & 0x0fff];
             }
             break;
 
@@ -414,7 +414,7 @@ const render = (state: State) => {
                 state.buffer[8 * row + (col >>> 3)] &
                     (0x01 << (7 - (col & 0x07)))
                     ? '██'
-                    : '  ',
+                    : 'XX',
             );
         }
         process.stdout.write('\n');
