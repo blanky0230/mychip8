@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as process from 'process';
 
-const FPS = 15;
+const FPS = 30;
 const INSTRUCTIONS_FRAME = 20;
 
 enum Opcode {
@@ -54,8 +54,10 @@ interface Instruction {
 }
 
 interface State {
+    ticks: number;
+    time: number;
     mem: Uint8Array; //[]
-    stack: Uint8Array; // []
+    stack: Uint16Array; // []
     s: number; // 0x0
     p: number; //0x200
     delayTimer: number;
@@ -116,11 +118,62 @@ const decodeInto = (
             instruction.operand = instructionWord & 0x0fff;
             break;
 
+        case 0x2000:
+            instruction.opcode = Opcode.jsr;
+            instruction.operand = instructionWord & 0x0fff;
+            break;
+
         case 0x1000:
             instruction.opcode = Opcode.jmp;
             instruction.operand = instructionWord & 0x0fff;
             break;
 
+        case 0xf000: {
+            extractReg1();
+            switch (instructionWord & 0x00ff) {
+                case 0x0015:
+                    instruction.opcode = Opcode.sdelay;
+                    break;
+
+                case 0x0007:
+                    instruction.opcode = Opcode.gdelay;
+                    break;
+
+                case 0x001e:
+                    instruction.opcode = Opcode.adi;
+                    break;
+
+                case 0x0065:
+                    instruction.opcode = Opcode.ldr;
+                    break;
+            }
+            break;
+        }
+
+        case 0x8000: {
+            extractReg1();
+            extractReg2();
+            switch (instructionWord & 0x000f) {
+                case 0x0000:
+                    instruction.opcode = Opcode.mov;
+                    break;
+
+                case 0x0002:
+                    instruction.opcode = Opcode.and;
+                    break;
+            }
+            break;
+        }
+
+        case 0x0000: {
+            if (instructionWord === 0x00e0) {
+                instruction.opcode = Opcode.cls;
+            }
+            if (instructionWord === 0x00ee) {
+                instruction.opcode = Opcode.rts;
+            }
+            break;
+        }
         default:
             break;
     }
@@ -134,9 +187,15 @@ const disassemble = (instruction: Instruction): string => {
                 .padStart(3, '0')}`;
 
         case Opcode.mov:
-            return `0x6 mov v${instruction.reg1.toString(
+            if (instruction.reg2 === -1) {
+                return `0x6 mov v${instruction.reg1.toString(
+                    16,
+                )} 0x${instruction.operand.toString(16).padStart(2, '0')}`;
+            }
+
+            return `0x8 mov v${instruction.reg1.toString(
                 16,
-            )} 0x${instruction.operand.toString(16).padStart(2, '0')}`;
+            )} v${instruction.reg2.toString(16)}`;
 
         case Opcode.mvi:
             return `0xA mvi 0x${instruction.operand
@@ -161,9 +220,41 @@ const disassemble = (instruction: Instruction): string => {
                 .padStart(2, '0')}`;
 
         case Opcode.add:
-            return `0x7 add v${instruction.reg1.toString(
+            if (instruction.reg2 === -1) {
+                return `0x7 add v${instruction.reg1.toString(
+                    16,
+                )} 0x${instruction.operand.toString(16).padStart(3, '0')}`;
+            }
+
+        case Opcode.and:
+            return `0x8 and v${instruction.reg1.toString(
                 16,
-            )} 0x${instruction.operand.toString(16).padStart(3, '0')}`;
+            )} v${instruction.reg2.toString(16)}`;
+
+        case Opcode.cls:
+            return `0x00E0 clear screen`;
+
+        case Opcode.sdelay:
+            return `0xf sdelay v${instruction.reg1
+                .toString(16)
+                .padStart(2, '0')}`;
+
+        case Opcode.jsr:
+            return `0x2 jsr ${instruction.operand
+                .toString(16)
+                .padStart(3, '0')}`;
+
+        case Opcode.gdelay:
+            return `0xfr07 gdelay ${instruction.reg1.toString(16)}`;
+
+        case Opcode.rts:
+            return `0x00ee rts`;
+
+        case Opcode.adi:
+            return `0xF adi v${instruction.reg1.toString(16)}`;
+
+        case Opcode.ldr:
+            return `0xF ldr v${instruction.reg1.toString(16)}`;
 
         default:
             return `0x${instruction.word
@@ -235,7 +326,7 @@ const execute = (instruction: Instruction, state: State): void => {
             break;
 
         case Opcode.mvi:
-            state.i = instruction.operand;
+            state.i = instruction.operand & 0x0fff;
             break;
 
         case Opcode.rand:
@@ -262,12 +353,56 @@ const execute = (instruction: Instruction, state: State): void => {
             break;
         }
 
+        case Opcode.and:
+            state.register[instruction.reg1] =
+                state.register[instruction.reg1] & op2();
+            break;
+
         case Opcode.jmp:
             state.p = instruction.operand;
             break;
 
+        case Opcode.cls:
+            state.buffer.fill(0);
+            break;
+
+        case Opcode.sdelay:
+            state.delayTimer = state.register[instruction.reg1];
+            break;
+
+        case Opcode.jsr:
+            // console.log(`JSR: ${state.p}`);
+            state.stack[state.s] = state.p;
+            state.p = instruction.operand;
+            state.s = (state.s + 1) & 0xf;
+            break;
+
+        case Opcode.gdelay:
+            state.register[instruction.reg1] = state.delayTimer;
+            break;
+
+        case Opcode.rts:
+            state.s = (state.s - 1) & 0xf;
+            state.p = state.stack[state.s];
+            // console.log(`RTS: ${state.p.toString(16)}`);
+            break;
+
+        case Opcode.adi:
+            state.i = (state.i + state.register[instruction.reg1]) & 0x0fff;
+            break;
+
+        case Opcode.ldr:
+            for (let i = 0; i <= instruction.reg1; i++) {
+                state.register[i] = state.mem[state.i + i];
+            }
+            break;
+
         default:
-            throw new Error('invalid instruction');
+            throw new Error(
+                `invalid instruction: ${instruction.word
+                    .toString(16)
+                    .padStart(4, '0')}`,
+            );
     }
 };
 
@@ -301,6 +436,23 @@ const advanceFrame = (state: State) => {
         state.p = (state.p + 2) & 0xffff;
         decodeInto(instructionWord, currentInstruction);
         execute(currentInstruction, state);
+
+        state.time += 1000 / FPS / INSTRUCTIONS_FRAME;
+        const currentTicks = Math.floor((state.time * 60) / 1000);
+
+        if (currentTicks > state.ticks) {
+            state.delayTimer = Math.max(
+                state.delayTimer - (currentTicks - state.ticks),
+                0,
+            );
+
+            state.soundTimer = Math.max(
+                state.soundTimer - (currentTicks - state.ticks),
+                0,
+            );
+
+            state.ticks = currentTicks;
+        }
     }
 };
 
@@ -319,7 +471,9 @@ const main = async () => {
         register: new Uint8Array(16),
         s: 0x0000,
         soundTimer: 0,
-        stack: new Uint8Array(64),
+        time: 0,
+        ticks: 0,
+        stack: new Uint16Array(16),
     };
 
     try {
@@ -330,15 +484,14 @@ const main = async () => {
         process.exit(1);
     }
 
-    let timeEmulated = 0;
+    let ticks = 0;
     const timebase = Date.now();
 
     while (true) {
         advanceFrame(state);
         render(state);
 
-        timeEmulated += 1000 / FPS;
-        const delta = timeEmulated - (Date.now() - timebase);
+        const delta = state.time - (Date.now() - timebase);
 
         if (delta > 0) {
             await new Promise((r) => setTimeout(r, delta));
